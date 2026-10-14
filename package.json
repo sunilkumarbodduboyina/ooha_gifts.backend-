@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "test": "node --test",
     "setup": "node setup/init.js",
     "seed": "node setup/init.js"
   },
@@ -16,6 +17,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
     "jsonwebtoken": "^9.0.2",
+    "mongoose": "^9.11.2",
     "multer": "^2.0.2",
     "mysql2": "^3.11.4"
   }
