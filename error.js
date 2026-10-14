@@ -1,33 +1,74 @@
-function notFound(req, res) {
-  res.status(404).json({ success: false, message: `Route not found: ${req.method} ${req.originalUrl}` });
-}
 
-// eslint-disable-next-line no-unused-vars
-function errorHandler(err, req, res, next) {
-  console.error('API error:', err.message);
-  /* Response already on the wire (e.g. client aborted a gzip stream) —
-     never attempt a second res.json(), just hand it back to Express. */
-  if (res.headersSent) return next(err);
-  if (err.code === 'ER_DUP_ENTRY') {
-    return res.status(409).json({ success: false, message: 'That record already exists.' });
-  }
-  if (err.code === 'ER_NO_REFERENCED_ROW_2' || err.code === 'ER_ROW_IS_REFERENCED_2') {
-    return res.status(409).json({ success: false, message: 'Record is in use and cannot be changed.' });
-  }
-  if (err.name === 'MulterError') {
-    return res.status(400).json({ success: false, message: `Upload error: ${err.message}` });
-  }
-  const status = err.status || 500;
-  res.status(status).json({
+function notFound(req, res) {
+  res.status(404).json({
     success: false,
-    message: err.expose ? err.message : err.message || 'Something went wrong',
+    message: `Route not found: ${req.method} ${req.originalUrl}`,
   });
 }
 
-/** Wrap async controllers so rejections reach the error handler. */
-const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+// Express error-handling middleware
+function errorHandler(err, req, res, next) {
+  console.error('API error:', err.message);
 
-/** Create an error with an HTTP status that is safe to show to clients. */
+  // If the response has already started, let Express handle the error.
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  // Duplicate record (MySQL or MongoDB)
+  if (
+    err.code === 'ER_DUP_ENTRY' ||
+    err.code === 11000
+  ) {
+    return res.status(409).json({
+      success: false,
+      message: 'That record already exists.',
+    });
+  }
+
+  // Invalid uploaded file
+  if (err.name === 'MulterError') {
+    return res.status(400).json({
+      success: false,
+      message: `Upload error: ${err.message}`,
+    });
+  }
+
+  // Invalid MongoDB document ID
+  if (err.name === 'CastError') {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid record ID.',
+    });
+  }
+
+  // MongoDB validation error
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({
+      success: false,
+      message: err.message,
+    });
+  }
+
+  const status = Number(err.status || err.statusCode) || 500;
+  const safeStatus = status >= 400 && status <= 599 ? status : 500;
+
+  res.status(safeStatus).json({
+    success: false,
+    message:
+      err.expose && safeStatus < 500
+        ? err.message
+        : safeStatus >= 500
+          ? 'Something went wrong. Please try again later.'
+          : err.message || 'Request failed.',
+  });
+}
+
+// Forward async controller errors to Express
+const asyncHandler = (fn) => (req, res, next) =>
+  Promise.resolve(fn(req, res, next)).catch(next);
+
+// Create an HTTP error safe to display to the client
 function httpError(status, message) {
   const err = new Error(message);
   err.status = status;
@@ -35,4 +76,9 @@ function httpError(status, message) {
   return err;
 }
 
-module.exports = { notFound, errorHandler, asyncHandler, httpError };
+module.exports = {
+  notFound,
+  errorHandler,
+  asyncHandler,
+  httpError,
+};
